@@ -23,6 +23,7 @@ type Config struct {
 	Region       string      `mapstructure:"region"`
 	Profile      string      `mapstructure:"profile"`
 	IMDSEndpoint string      `mapstructure:"imds_endpoint"`
+	AssumeRole   string      `mapstructure:"assume_role"`
 	Logs         *LogsConfig `mapstructure:"logs"`
 }
 

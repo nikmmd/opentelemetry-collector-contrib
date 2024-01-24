@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
@@ -29,6 +30,7 @@ type logsReceiver struct {
 	region              string
 	profile             string
 	imdsEndpoint        string
+	assumeRole          string
 	pollInterval        time.Duration
 	maxEventsPerRequest int
 	nextStartTime       time.Time
@@ -121,6 +123,7 @@ func newLogsReceiver(cfg *Config, logger *zap.Logger, consumer consumer.Logs) *l
 	return &logsReceiver{
 		region:              cfg.Region,
 		profile:             cfg.Profile,
+		assumeRole:          cfg.AssumeRole,
 		consumer:            consumer,
 		maxEventsPerRequest: cfg.Logs.MaxEventsPerRequest,
 		imdsEndpoint:        cfg.IMDSEndpoint,
@@ -339,22 +342,48 @@ func (l *logsReceiver) discoverGroups(ctx context.Context, auto *AutodiscoverCon
 	}
 	return groups, nil
 }
-
 func (l *logsReceiver) ensureSession() error {
 	if l.client != nil {
 		return nil
 	}
+
+	var sess *session.Session
+	var err error
+
+	// Start with a basic AWS config
 	awsConfig := aws.NewConfig().WithRegion(l.region)
 	options := session.Options{
 		Config: *awsConfig,
 	}
+
 	if l.imdsEndpoint != "" {
 		options.EC2IMDSEndpoint = l.imdsEndpoint
 	}
 	if l.profile != "" {
 		options.Profile = l.profile
 	}
-	s, err := session.NewSessionWithOptions(options)
-	l.client = cloudwatchlogs.New(s)
-	return err
+	if l.assumeRole != "" {
+		// Role ARN is provided, initialize a basic session then assume the specified role
+		sts := session.Must(session.NewSessionWithOptions(options))
+		if sts == nil {
+			err = errors.New("unable to create session")
+			return err
+		}
+		creds := stscreds.NewCredentials(sts, l.assumeRole)
+		// Create a new session with the assumed role's credentials
+		sess, err = session.NewSession(&aws.Config{
+			Region:      aws.String(l.region),
+			Credentials: creds,
+		})
+	} else {
+		sess, err = session.NewSessionWithOptions(options)
+	}
+	// Depending on the configuration, create a session using the profile or assume a role
+	if err != nil {
+		return err
+	}
+	// Use the session to create the client
+	l.client = cloudwatchlogs.New(sess)
+
+	return nil
 }

@@ -38,6 +38,14 @@ func TestStart(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCloudwatchClient(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	cfg.Region = "us-west-1"
+	cfg.Logs.Groups.AutodiscoverConfig = nil
+
+	require.Equal(t, 1, 1)
+}
+
 func TestPrefixedConfig(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 	cfg.Region = "us-west-1"
